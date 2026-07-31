@@ -1386,8 +1386,10 @@ def test_base_spec_public_information_includes_supports_offset() -> None:
 
 
 def test_get_public_information_exposes_ansi_identifier_quote() -> None:
-    """The base spec advertises ANSI double quotes for identifier quoting."""
+    """The base spec advertises ANSI double quotes for identifier quoting,
+    escaped by doubling the closing character."""
     assert BaseEngineSpec.get_public_information()["identifier_quote"] == {
         "start": '"',
         "end": '"',
+        "escape_by_doubling": True,
     }
