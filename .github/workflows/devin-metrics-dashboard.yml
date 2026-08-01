@@ -61,7 +61,7 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           mkdir -p _site
-          cp docs/devin-verification/index.html _site/index.html
+          cp scripts/devin_verification_metrics/dashboard.html _site/index.html
           python scripts/devin_verification_metrics/aggregate.py _site/verifications.json
 
       - name: Upload Pages artifact
