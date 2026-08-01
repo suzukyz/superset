@@ -1,0 +1,67 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+name: Devin Issue Verification
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  issues: write
+
+concurrency:
+  group: devin-verify-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  trigger-devin-verification:
+    if: >
+      github.event.label.name == 'validation:required' &&
+      github.event.issue.state == 'open' &&
+      !contains(github.event.issue.labels.*.name, 'devin:verifying') &&
+      !contains(github.event.issue.labels.*.name, 'sip') &&
+      !contains(github.event.issue.labels.*.name, 'design:proposal')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Mark issue as being verified
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue edit "${{ github.event.issue.number }}" \
+            --repo "${{ github.repository }}" \
+            --add-label "devin:verifying"
+
+      - name: Start Devin verification session
+        env:
+          DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          prompt=$(cat <<EOF
+          Follow the issue verification playbook at .devin/playbooks/issue-verification.md
+          in the ${REPO} repository.
+
+          Target issue: https://github.com/${REPO}/issues/${ISSUE_NUMBER}
+          EOF
+          )
+          response=$(curl -sS -X POST "https://api.devin.ai/v1/sessions" \
+            -H "Authorization: Bearer ${DEVIN_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg prompt "$prompt" \
+                  '{prompt: $prompt, idempotent: true, title: ("Issue verification #" + env.ISSUE_NUMBER)}')")
+          echo "$response" | jq '{session_id, url}'
