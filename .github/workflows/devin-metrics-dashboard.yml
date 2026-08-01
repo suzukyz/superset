@@ -1,0 +1,74 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+name: Devin Verification Metrics
+
+on:
+  # Refresh when a verification report is (likely) posted or labels change.
+  issues:
+    types: [labeled, unlabeled, closed]
+  issue_comment:
+    types: [created, edited]
+  # Nightly refresh to pick up human approve/reject decisions.
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+# Only one deploy at a time; let the latest win.
+concurrency:
+  group: devin-metrics-pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: read
+  pages: write
+  id-token: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Aggregate verification metrics from issues
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          mkdir -p _site
+          cp docs/devin-verification/index.html _site/index.html
+          python scripts/devin_verification_metrics/aggregate.py _site/verifications.json
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4

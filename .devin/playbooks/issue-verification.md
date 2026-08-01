@@ -90,10 +90,30 @@ Post ONE comment on the issue in this exact format:
 
 ---
 _meta: run time <minutes>m | session: <session URL>_
+
+<!-- devin-metrics: {"issue": <n>, "verdict": "<reproduced|not reproduced|insufficient info|needs human|unverified>", "runtime_min": <number>, "acus": <number>, "env": "<superset version + db>", "session": "<session URL>"} -->
 ```
 
-### 7. Metrics line
+### 7. Metrics marker
 
-At the end of the report comment, the `_meta:` line above doubles as the
-metrics record (verdict, run time, session link). Do not create any other
-artifacts.
+The last line of every report comment MUST be a hidden, machine-readable
+marker (an HTML comment, so it is invisible in the rendered issue):
+
+```
+<!-- devin-metrics: {"issue": 4, "verdict": "reproduced", "runtime_min": 25, "acus": 6, "env": "Superset master (fae84ba) + postgres", "session": "https://app.devin.ai/sessions/..."} -->
+```
+
+Rules for the marker:
+
+- Emit exactly one marker per report comment, as valid single-line JSON.
+- `verdict` must be one of: `reproduced`, `not reproduced`, `insufficient info`,
+  `needs human`, `unverified`.
+- `runtime_min` is wall-clock verification minutes; `acus` is the session's
+  ACU consumption (estimate if the exact figure is not yet known).
+- Do NOT add `human_decision` — a human sets that later (by editing the marker
+  to include `"human_decision": "approved"` or `"rejected"`), which the
+  dashboard reads to compute the approval rate.
+
+The `Devin Verification Metrics` workflow reads these markers across all issues
+and regenerates the GitHub Pages dashboard. The issues remain the single source
+of truth; no separate data file is stored. Do not create any other artifacts.
