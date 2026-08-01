@@ -23,59 +23,36 @@ from flask_caching.backends.rediscache import RedisCache, RedisSentinelCache
 from redis.sentinel import Sentinel
 
 
-class RedisCacheBackend(RedisCache):
+def common_config_kwargs(config: dict[str, Any]) -> dict[str, Any]:
+    """
+    Read the connection settings shared by both backends from the config.
+    """
+    return {
+        "db": config.get("CACHE_REDIS_DB", 0),
+        "password": config.get("CACHE_REDIS_PASSWORD", None),
+        "ssl": config.get("CACHE_REDIS_SSL", False),
+        "ssl_certfile": config.get("CACHE_REDIS_SSL_CERTFILE", None),
+        "ssl_keyfile": config.get("CACHE_REDIS_SSL_KEYFILE", None),
+        "ssl_cert_reqs": config.get("CACHE_REDIS_SSL_CERT_REQS", "required"),
+        "ssl_ca_certs": config.get("CACHE_REDIS_SSL_CA_CERTS", None),
+        "socket_timeout": config.get("CACHE_REDIS_SOCKET_TIMEOUT", None),
+        "socket_connect_timeout": config.get(
+            "CACHE_REDIS_SOCKET_CONNECT_TIMEOUT", None
+        ),
+    }
+
+
+class RedisCacheCommandsMixin:
+    """
+    Redis commands used by the async events backends.
+
+    ``flask_caching``'s cache classes only expose a key/value API, so the
+    stream and pub/sub commands are proxied to the underlying client.
+    """
+
     MAX_EVENT_COUNT = 100
 
-    def __init__(  # pylint: disable=too-many-arguments
-        self,
-        host: str,
-        port: int,
-        password: str | None = None,
-        db: int = 0,
-        default_timeout: int = 300,
-        key_prefix: str | None = None,
-        ssl: bool = False,
-        ssl_certfile: str | None = None,
-        ssl_keyfile: str | None = None,
-        ssl_cert_reqs: str = "required",
-        ssl_ca_certs: str | None = None,
-        socket_timeout: float | None = None,
-        socket_connect_timeout: float | None = None,
-        **kwargs: Any,
-    ) -> None:
-        super().__init__(
-            host=host,
-            port=port,
-            password=password,
-            db=db,
-            default_timeout=default_timeout,
-            key_prefix=key_prefix,
-            **kwargs,
-        )
-        # redis-py 8 defaults to a 5s socket timeout and RESP3 on the wire
-        # (previously: no timeout, RESP2). Pin the pre-upgrade behavior
-        # explicitly so bumping the library doesn't silently introduce new
-        # timeouts or require RESP3 server support; socket_timeout/
-        # connect_timeout stay operator-configurable. Built as a single
-        # dict (rather than mixed explicit kwargs + **kwargs) because
-        # combining both against redis.Redis's many @overloads defeats
-        # mypy's overload resolution.
-        connection_kwargs: dict[str, Any] = {
-            "host": host,
-            "port": port,
-            "password": password,
-            "db": db,
-            "ssl": ssl,
-            "ssl_certfile": ssl_certfile,
-            "ssl_keyfile": ssl_keyfile,
-            "ssl_cert_reqs": ssl_cert_reqs,
-            "ssl_ca_certs": ssl_ca_certs,
-            "socket_timeout": socket_timeout,
-            "socket_connect_timeout": socket_connect_timeout,
-            "protocol": 2,
-            **kwargs,
-        }
-        self._cache = redis.Redis(**connection_kwargs)
+    _cache: redis.Redis
 
     def set(
         self,
@@ -154,24 +131,67 @@ class RedisCacheBackend(RedisCache):
         count = count or self.MAX_EVENT_COUNT
         return self._cache.xrange(stream_name, start, end, count)
 
+
+class RedisCacheBackend(RedisCacheCommandsMixin, RedisCache):
+    def __init__(  # pylint: disable=too-many-arguments
+        self,
+        host: str,
+        port: int,
+        password: str | None = None,
+        db: int = 0,
+        default_timeout: int = 300,
+        key_prefix: str | None = None,
+        ssl: bool = False,
+        ssl_certfile: str | None = None,
+        ssl_keyfile: str | None = None,
+        ssl_cert_reqs: str = "required",
+        ssl_ca_certs: str | None = None,
+        socket_timeout: float | None = None,
+        socket_connect_timeout: float | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(
+            host=host,
+            port=port,
+            password=password,
+            db=db,
+            default_timeout=default_timeout,
+            key_prefix=key_prefix,
+            **kwargs,
+        )
+        # redis-py 8 defaults to a 5s socket timeout and RESP3 on the wire
+        # (previously: no timeout, RESP2). Pin the pre-upgrade behavior
+        # explicitly so bumping the library doesn't silently introduce new
+        # timeouts or require RESP3 server support; socket_timeout/
+        # connect_timeout stay operator-configurable. Built as a single
+        # dict (rather than mixed explicit kwargs + **kwargs) because
+        # combining both against redis.Redis's many @overloads defeats
+        # mypy's overload resolution.
+        connection_kwargs: dict[str, Any] = {
+            "host": host,
+            "port": port,
+            "password": password,
+            "db": db,
+            "ssl": ssl,
+            "ssl_certfile": ssl_certfile,
+            "ssl_keyfile": ssl_keyfile,
+            "ssl_cert_reqs": ssl_cert_reqs,
+            "ssl_ca_certs": ssl_ca_certs,
+            "socket_timeout": socket_timeout,
+            "socket_connect_timeout": socket_connect_timeout,
+            "protocol": 2,
+            **kwargs,
+        }
+        self._cache = redis.Redis(**connection_kwargs)
+
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> RedisCacheBackend:
         kwargs = {
+            **common_config_kwargs(config),
             "host": config.get("CACHE_REDIS_HOST", "localhost"),
             "port": config.get("CACHE_REDIS_PORT", 6379),
-            "db": config.get("CACHE_REDIS_DB", 0),
-            "password": config.get("CACHE_REDIS_PASSWORD", None),
             "key_prefix": config.get("CACHE_KEY_PREFIX", None),
             "default_timeout": config.get("CACHE_DEFAULT_TIMEOUT", 300),
-            "ssl": config.get("CACHE_REDIS_SSL", False),
-            "ssl_certfile": config.get("CACHE_REDIS_SSL_CERTFILE", None),
-            "ssl_keyfile": config.get("CACHE_REDIS_SSL_KEYFILE", None),
-            "ssl_cert_reqs": config.get("CACHE_REDIS_SSL_CERT_REQS", "required"),
-            "ssl_ca_certs": config.get("CACHE_REDIS_SSL_CA_CERTS", None),
-            "socket_timeout": config.get("CACHE_REDIS_SOCKET_TIMEOUT", None),
-            "socket_connect_timeout": config.get(
-                "CACHE_REDIS_SOCKET_CONNECT_TIMEOUT", None
-            ),
         }
 
         # Handle username separately as it's optional for Redis authentication.
@@ -181,9 +201,7 @@ class RedisCacheBackend(RedisCache):
         return cls(**kwargs)
 
 
-class RedisSentinelCacheBackend(RedisSentinelCache):
-    MAX_EVENT_COUNT = 100
-
+class RedisSentinelCacheBackend(RedisCacheCommandsMixin, RedisSentinelCache):
     def __init__(  # pylint: disable=too-many-arguments
         self,
         sentinels: list[tuple[str, int]],
@@ -270,100 +288,13 @@ class RedisSentinelCacheBackend(RedisSentinelCache):
             **kwargs,
         )
 
-    def set(
-        self,
-        name: str,
-        value: Any,
-        ex: int | None = None,
-        px: int | None = None,
-        nx: bool = False,
-        xx: bool = False,
-    ) -> bool | None:
-        """
-        Set the value at key ``name``.
-
-        :param name: Key name
-        :param value: Value to set
-        :param ex: Expire time in seconds
-        :param px: Expire time in milliseconds
-        :param nx: If True, set only if key does not exist
-        :param xx: If True, set only if key already exists
-        :returns: True if set successfully, None if nx/xx condition not met
-        """
-        return self._cache.set(name, value, ex=ex, px=px, nx=nx, xx=xx)
-
-    def get(self, name: str) -> Any:
-        """
-        Get the raw value at key ``name``.
-
-        :param name: Key name
-        :returns: The stored value (bytes), or None if the key is absent
-        """
-        return self._cache.get(name)
-
-    def delete(self, *names: str) -> int:
-        """
-        Delete one or more keys.
-
-        :param names: Key names to delete
-        :returns: Number of keys deleted
-        """
-        return self._cache.delete(*names)
-
-    def publish(self, channel: str, message: str) -> int:
-        """
-        Publish a message to a Redis pub/sub channel.
-
-        :param channel: The channel name to publish to
-        :param message: The message to publish
-        :returns: Number of subscribers that received the message
-        """
-        return self._cache.publish(channel, message)
-
-    def pubsub(self) -> redis.client.PubSub:
-        """
-        Create a pub/sub subscription object.
-
-        :returns: PubSub object for subscribing to channels
-        """
-        return self._cache.pubsub()
-
-    def xadd(
-        self,
-        stream_name: str,
-        event_data: dict[str, Any],
-        event_id: str = "*",
-        maxlen: int | None = None,
-    ) -> str:
-        return self._cache.xadd(stream_name, event_data, event_id, maxlen)
-
-    def xrange(
-        self,
-        stream_name: str,
-        start: str = "-",
-        end: str = "+",
-        count: int | None = None,
-    ) -> list[Any]:
-        count = count or self.MAX_EVENT_COUNT
-        return self._cache.xrange(stream_name, start, end, count)
-
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> RedisSentinelCacheBackend:
         kwargs = {
+            **common_config_kwargs(config),
             "sentinels": config.get("CACHE_REDIS_SENTINELS", [("127.0.0.1", 26379)]),
             "master": config.get("CACHE_REDIS_SENTINEL_MASTER", "mymaster"),
-            "password": config.get("CACHE_REDIS_PASSWORD", None),
             "sentinel_password": config.get("CACHE_REDIS_SENTINEL_PASSWORD", None),
             "key_prefix": config.get("CACHE_KEY_PREFIX", ""),
-            "db": config.get("CACHE_REDIS_DB", 0),
-            "ssl": config.get("CACHE_REDIS_SSL", False),
-            "ssl_certfile": config.get("CACHE_REDIS_SSL_CERTFILE", None),
-            "ssl_keyfile": config.get("CACHE_REDIS_SSL_KEYFILE", None),
-            "ssl_cert_reqs": config.get("CACHE_REDIS_SSL_CERT_REQS", "required"),
-            "ssl_ca_certs": config.get("CACHE_REDIS_SSL_CA_CERTS", None),
-            "socket_timeout": config.get("CACHE_REDIS_SOCKET_TIMEOUT", None),
-            "socket_connect_timeout": config.get(
-                "CACHE_REDIS_SOCKET_CONNECT_TIMEOUT", None
-            ),
         }
         return cls(**kwargs)

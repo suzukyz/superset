@@ -21,7 +21,6 @@ Unified metric discovery across built-in datasets and external semantic views.
 """
 
 import logging
-from typing import Any
 
 from fastmcp import Context
 from sqlalchemy.orm import Query
@@ -36,6 +35,7 @@ from superset.mcp_service.privacy import (
     requires_data_model_metadata_access,
     user_can_view_data_model_metadata,
 )
+from superset.mcp_service.semantic_layer.helpers import builtin_dimensions
 from superset.mcp_service.semantic_layer.schemas import (
     DimensionInfo,
     ListMetricsRequest,
@@ -52,24 +52,6 @@ def _matches_search(text: str | None, search: str) -> bool:
     if not text:
         return False
     return search.lower() in text.lower()
-
-
-def _builtin_compatible_dims(dataset: Any) -> list[DimensionInfo]:
-    """Return groupby-enabled columns as compatible dimensions for a built-in metric."""
-    return [
-        DimensionInfo(
-            name=col.column_name,
-            verbose_name=col.verbose_name or None,
-            description=col.description or None,
-            type=col.type or None,
-            is_dttm=bool(col.is_dttm),
-            groupby=bool(col.groupby),
-            filterable=bool(col.filterable),
-            source="builtin",
-        )
-        for col in dataset.columns
-        if col.groupby
-    ]
 
 
 def _collect_builtin_metrics(request: ListMetricsRequest) -> list[MetricInfo]:
@@ -108,9 +90,7 @@ def _collect_builtin_metrics(request: ListMetricsRequest) -> list[MetricInfo]:
     results: list[MetricInfo] = []
     for dataset in datasets:
         compat_dims = (
-            _builtin_compatible_dims(dataset)
-            if request.include_compatible_dimensions
-            else []
+            builtin_dimensions(dataset) if request.include_compatible_dimensions else []
         )
         for metric in dataset.metrics:
             name = metric.metric_name or ""

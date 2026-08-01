@@ -33,8 +33,8 @@ from superset.exceptions import SupersetSecurityException
 from superset.mcp_service.app import mcp
 from superset.utils import json
 
-get_compatible_dimensions_module: ModuleType = importlib.import_module(
-    "superset.mcp_service.semantic_layer.tool.get_compatible_dimensions"
+semantic_layer_helpers: ModuleType = importlib.import_module(
+    "superset.mcp_service.semantic_layer.helpers"
 )
 
 
@@ -48,7 +48,7 @@ def mock_auth() -> Generator[MagicMock, None, None]:
     with (
         patch("superset.mcp_service.auth.get_user_from_request") as mock_get_user,
         patch.object(
-            get_compatible_dimensions_module,
+            semantic_layer_helpers,
             "user_can_view_data_model_metadata",
             return_value=True,
         ),
@@ -216,7 +216,7 @@ async def test_get_compatible_dimensions_requires_one_source(
 async def test_get_compatible_dimensions_privacy_check(mcp_server: FastMCP) -> None:
     """Errors when the user lacks data-model metadata access."""
     with patch.object(
-        get_compatible_dimensions_module,
+        semantic_layer_helpers,
         "user_can_view_data_model_metadata",
         return_value=False,
     ):
